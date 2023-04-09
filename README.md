@@ -15,7 +15,10 @@ docker run -it -v $PWD:/app -w /app nodeseadev
 ## Build
 
 ```bash
-./node_modules/.bin/ncc build ./node_modules/.bin/piping-server -o dist
 cp $(command -v node) piping-server
+./node_modules/.bin/ncc build ./node_modules/.bin/piping-server -o dist
 ./node_modules/.bin/postject piping-server NODE_JS_CODE dist/index.js --sentinel-fuse NODE_JS_FUSE_fce680ab2cc467b6e072b8b5df1996b2
 ```
+
+## References
+* https://nodejs.org/docs/latest-v19.x/api/single-executable-applications.html
