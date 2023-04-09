@@ -5,6 +5,9 @@
 This project is experimental because Node.js SEA is also experimental.  
 <https://github.com/nwtgck/piping-server-pkg> is better to get a single executable.
 
+## Pre-built binaries
+<https://github.com/nwtgck/piping-server-sea/releases>
+
 ## Develop
 
 ```bash
