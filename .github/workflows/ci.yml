@@ -1,0 +1,120 @@
+name: CI
+
+on: [push]
+
+env:
+  PIPING_SERVER_CHECK_VERSION: 0.11.0
+
+jobs:
+  linux_x64:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3.6.0
+      with:
+        node-version: '19.8.1'
+    - run: npm ci
+    - name: Build
+      run: |
+        set -xeu
+        cp $(command -v node) piping-server
+        ./node_modules/.bin/ncc build ./node_modules/.bin/piping-server -o dist
+        ./node_modules/.bin/postject piping-server NODE_JS_CODE dist/index.js --sentinel-fuse NODE_JS_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+    - name: Archive
+      run: |
+        set -xeu
+        dir_name=piping-server-sea-$(node -e 'console.log(`${process.platform}-${process.arch}`)')
+        mkdir ${dir_name}
+        cp piping-server ${dir_name}
+        tar czvf ${dir_name}.tar.gz ${dir_name}
+
+    - name: Create certificates
+      run: cd /tmp && mkdir ssl_certs && cd ssl_certs && openssl req -x509 -newkey rsa:4096 -keyout server.key -out server.crt -days 365 -sha256 -nodes --subj '/CN=localhost/'
+    - name: Install piping-server-check
+      run: cd /tmp && wget -O piping-server-check.deb https://github.com/nwtgck/piping-server-check/releases/download/v${PIPING_SERVER_CHECK_VERSION}/piping-server-check-${PIPING_SERVER_CHECK_VERSION}-linux-amd64.deb && sudo dpkg -i piping-server-check.deb
+    - name: piping-server-check
+      run: piping-server-check --http1.1 --http1.1-tls --h2 --tls-skip-verify --concurrency 100 --server-command="${SERVER_COMMAND}" --n-simultaneous-requests=30 --transfer-speed-byte $((1024 * 1024 * 1024 * 1024)) --transfer-span 3s --transfer-span 10s --transfer-span 1m
+      env:
+        SERVER_COMMAND: 'mkdir -p /tmp/logs && exec ./piping-server --http-port=$HTTP_PORT --enable-https --https-port=$HTTPS_PORT --key-path=/tmp/ssl_certs/server.key --crt-path=/tmp/ssl_certs/server.crt 2>&1 | tee /tmp/logs/$SERVER_RUN_ID.log > /dev/stderr'
+      timeout-minutes: 2
+    - name: Show server logs from piping-server-check
+      if: ${{ always() }}
+      run: tail -n +1 /tmp/logs/*
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: linux-x64
+        path: |
+          piping-server-sea-*.tar.gz
+
+  macos_intel:
+    runs-on: macos-11
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3.6.0
+        with:
+          node-version: '19.8.1'
+      - run: npm ci
+      - name: Build
+        run: |
+          set -xeu
+          cp $(command -v node) piping-server
+          codesign --remove-signature piping-server
+          ./node_modules/.bin/ncc build ./node_modules/.bin/piping-server -o dist
+          ./node_modules/.bin/postject piping-server NODE_JS_CODE dist/index.js --sentinel-fuse NODE_JS_FUSE_fce680ab2cc467b6e072b8b5df1996b2 --macho-segment-name NODE_JS
+          codesign --sign - piping-server
+      - name: Archive
+        run: |
+          set -xeu
+          dir_name=piping-server-sea-$(node -e 'console.log(`${process.platform}-${process.arch}`)')
+          mkdir ${dir_name}
+          cp piping-server ${dir_name}
+          tar czvf ${dir_name}.tar.gz ${dir_name}
+
+      - name: Create certificates
+        run: cd /tmp && mkdir ssl_certs && cd ssl_certs && openssl req -x509 -newkey rsa:4096 -keyout server.key -out server.crt -days 365 -sha256 -nodes --subj '/CN=localhost/'
+      - name: Install piping-server-check
+        run: cd /tmp && curl -L https://github.com/nwtgck/piping-server-check/releases/download/v${PIPING_SERVER_CHECK_VERSION}/piping-server-check-${PIPING_SERVER_CHECK_VERSION}-darwin-amd64.tar.gz | tar xf - && sudo mv piping-server-check /usr/local/bin
+      - name: piping-server-check
+        run: piping-server-check --http1.1 --http1.1-tls --h2 --tls-skip-verify --concurrency 100 --server-command="${SERVER_COMMAND}" --n-simultaneous-requests=30 --transfer-speed-byte $((1024 * 1024 * 1024 * 1024)) --transfer-span 3s --transfer-span 10s --transfer-span 1m
+        env:
+          SERVER_COMMAND: 'mkdir -p /tmp/logs && exec ./piping-server --http-port=$HTTP_PORT --enable-https --https-port=$HTTPS_PORT --key-path=/tmp/ssl_certs/server.key --crt-path=/tmp/ssl_certs/server.crt 2>&1 | tee /tmp/logs/$SERVER_RUN_ID.log > /dev/stderr'
+        timeout-minutes: 2
+      - name: Show server logs from piping-server-check
+        if: ${{ always() }}
+        run: tail -n +1 /tmp/logs/*
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: darwin-x64
+          path: |
+            piping-server-sea-*.tar.gz
+
+  release_executables:
+    if: startsWith( github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    needs:
+      - linux_x64
+      - macos_intel
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: linux-x64
+          path: .
+      - uses: actions/download-artifact@v3
+        with:
+          name: darwin-x64
+          path: .
+      - run: |
+          set -xeu
+          mkdir ./publish_dir
+          mv piping-server-sea-* ./publish_dir
+          # Show and create checksums
+          (cd publish_dir && sha256sum * | tee /dev/stderr > sha256sums.txt)
+          TAG=$(echo $GITHUB_REF | cut -d / -f 3)
+          VERSION=$TAG
+          REPO=$(echo $GITHUB_REPOSITORY | cut -d / -f 2)
+          curl -L https://github.com/tcnksm/ghr/releases/download/v0.16.0/ghr_v0.16.0_linux_amd64.tar.gz | tar xzf -
+          ./ghr_v0.16.0_linux_amd64/ghr -t ${{ secrets.GITHUB_TOKEN }} -u ${GITHUB_ACTOR} -r ${REPO} -c ${GITHUB_SHA} -delete -n ${VERSION} ${VERSION} ./publish_dir
