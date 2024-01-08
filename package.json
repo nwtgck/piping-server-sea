@@ -10,7 +10,7 @@
     "piping-server": "^1.12.9"
   },
   "devDependencies": {
-    "@vercel/ncc": "^0.36.1",
+    "@vercel/ncc": "^0.38.1",
     "postject": "^1.0.0-alpha.6"
   }
 }
