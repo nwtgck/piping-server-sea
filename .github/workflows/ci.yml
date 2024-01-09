@@ -41,7 +41,7 @@ jobs:
       if: ${{ always() }}
       run: tail -n +1 /tmp/logs/*
 
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: linux-x64
         path: |
@@ -84,7 +84,7 @@ jobs:
         if: ${{ always() }}
         run: tail -n +1 /tmp/logs/*
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: darwin-x64
           path: |
